@@ -1,5 +1,5 @@
 import * as fs from 'fs'
-import { issue, validate } from './credentials.js'
+import { issue, verify } from './credentials.js'
 
 const mode = process.argv[2]
 
@@ -11,7 +11,7 @@ if (mode == 'issue') {
     err && console.log(err)
   })
 } else if (mode == 'verify') {
-  verifyCredential()
+  verify()
 } else {
   console.log('usage: node index.js <issue/verify>')
 }
