@@ -1,41 +1,78 @@
-// const express = require('express')
-// const axios = require('axios')
-// const bodyParser = require('body-parser')
-// const jwt_decode = require('jwt-decode')
-
 import express from 'express'
 import bodyParser from 'body-parser'
 import jwt_decode from 'jwt-decode'
 import axios from 'axios'
+import jwt from 'jsonwebtoken'
+import * as fs from 'fs'
 
 const app = express()
 const jsonParser = bodyParser.json()
 
-let jwt = {}
-let proof = {}
-let did
-let didDocument = {}
+// Example key from https://github.com/decentralized-identity/uni-resolver-driver-did-key#example-dids
+const issuerDid = 'did:key:z6MksQ35B5bwZDQq4QKuhQW2Sv6dcqwg4PqcSFf67pdgrtjB'
 
 app.get('/', (req, res) => {
   res.send('Successful response.')
 })
 
-app.post('/credential', jsonParser, (req, res) => {
-  proof = req.body.body
-  jwt = proof.proof.jwt
-  did = jwt_decode(jwt, { header: true }).kid
-  // didDocument = axiosClient.get(
-  //   'http://localhost:8080/1.0/identifiers/did:indy:idunion:BDrEcHc8Tb4Lb2VyQZWEDE'
-  // )
+app.post('/credential', jsonParser, async (req, res) => {
+  const walletJwt = req.body.body.proof.jwt
+  const walletDid = jwt_decode(walletJwt, { header: true }).kid
+  const nonce = jwt_decode(walletJwt, { header: false }).nonce
 
-  console.log(didDocument)
-  res.send('OK')
+  // TODO: validate token
+
+  const doc = await axios.get(`http://localhost:8080/1.0/identifiers/${walletDid}`)
+
+  if (doc.status !== 200) {
+    // TODO: 5.2/5.3 Authorization Responses?
+    res.send({ error: 'invalid_request' })
+    res.sendStatus(400)
+  }
+
+  const credential = {
+    '@context': [
+      'https://www.w3.org/2018/credentials/v1',
+      'https://www.w3.org/2018/credentials/examples/v1',
+    ],
+    id: 'https://example.com/credentials/1872',
+    type: ['VerifiableCredential', 'UniversityDegreeCredential'],
+    issuer: {
+      id: issuerDid,
+    },
+    issuanceDate: '2010-01-01T19:23:24Z',
+    credentialSubject: {
+      id: `${walletDid}`,
+      degree: {
+        type: 'BachelorDegree',
+        name: 'Bachelor of Science and Arts',
+      },
+    },
+  }
+
+  const payload = {
+    vc: credential,
+    iss: 'https://issuer.example.com',
+    aud: req.headers['host'],
+    nbf: Date.now(),
+    nonce: nonce,
+    sub: walletDid,
+  }
+  const options = {
+    algorithm: 'RS256',
+  }
+  const privateKey = fs.readFileSync('issuer_jwtRS256.key')
+
+  const token = jwt.sign(payload, privateKey, options)
+
+  const response = {
+    format: 'jwt_vc_json',
+    credential: token,
+    c_nonce: nonce,
+    c_nonce_expires_in: 86400,
+  }
+
+  res.send(response)
 })
-
-axios
-  .get(' http://localhost:8080/1.0/identifiers/did:ebsi:ziE2n8Ckhi6ut5Z8Cexrihd')
-  .then((respones) => console.log(respones.data.verificationMethod))
-
-//Retrieve key from
 
 app.listen(8079)
